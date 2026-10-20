@@ -1,6 +1,6 @@
 # Advanced Shortest Paths
 
-A collection of shortest-path graph algorithms with an interactive web-based visualization.
+A collection of shortest-path graph algorithms with an [`interactive web-based visualization`](https://tacitus-sl.github.io/shortest-paths-visualized/visualization.html).
 
 ![UI preview](screenshot/example_of_visualization.png)
 
@@ -48,7 +48,7 @@ Finds the shortest tour visiting a set of cities and returning to the start. Use
 
 ## Interactive Visualization
 
-Open [`visualization.html`](visualization.html) in any modern browser to see step-by-step animations of all four algorithms.
+Open [`visualization.html`](https://tacitus-sl.github.io/shortest-paths-visualized/visualization.html) in any modern browser to see step-by-step animations of all four algorithms.
 
 ### Features
 - **Tabbed interface** — switch between algorithms
