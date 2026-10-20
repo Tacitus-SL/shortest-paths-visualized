@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Shortest Paths - Visualization</title>
+    <style>
+        :root{--bg:#e9eef3;--card:#fff;--ink:#1b2433;--mut:#64748b;--line:#d5dde6;--acc:#0f766e;--fw:#2563eb;--bw:#ea580c}
+        *{box-sizing:border-box;margin:0}
+        body{font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);padding:20px;max-width:1280px;margin:auto}
+        h1{font-size:1.5rem;letter-spacing:-.01em}
+        .sub{color:var(--mut);margin:4px 0 16px}
+        .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+        button{font:inherit;cursor:pointer;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px 14px}
+        button:hover{border-color:var(--acc);color:var(--acc)}
+        button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+        .tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+        .tab{display:none}.tab.on{display:block}
+        .desc{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-bottom:12px;max-width:95ch}
+        .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+        .bar .go{background:var(--acc);color:#fff;border-color:var(--acc);min-width:110px}
+        .bar .go:hover{color:#fff;filter:brightness(1.1)}
+        .scrub{flex:1;min-width:140px;accent-color:var(--acc)}
+        .bar label{color:var(--mut);display:flex;gap:6px;align-items:center}
+        .bar input[type=range]{accent-color:var(--acc)}
+        .cnt{color:var(--mut);font-variant-numeric:tabular-nums;min-width:70px}
+        .main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:12px}
+        @media(max-width:960px){.main{grid-template-columns:1fr}}
+        .cv{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}
+        canvas{width:100%;height:auto;display:block;border-radius:8px;cursor:pointer}
+        .legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.85rem;color:var(--mut);padding:8px 4px 0}
+        .legend i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:-1px;border:2px solid}
+        aside{display:flex;flex-direction:column;gap:12px;min-width:0}
+        .now{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:10px;padding:12px 14px;min-height:110px}
+        .now p{margin-top:4px}
+        .now pre{font:12px/1.4 ui-monospace,monospace;margin-top:8px;overflow-x:auto;background:#f1f5f9;padding:8px;border-radius:6px}
+        .stat{color:var(--mut);font-size:.85rem;margin-top:8px}
+        .log{list-style:none;padding:0;background:var(--card);border:1px solid var(--line);border-radius:10px;max-height:300px;overflow-y:auto;position:relative}
+        .log li{padding:6px 12px;border-bottom:1px solid #eef2f6;cursor:pointer;font-size:.85rem}
+        .log li:hover{background:#f1f5f9}
+        .log li.on{background:#ccfbf1;font-weight:600}
+        .log li.past{color:var(--mut)}
+    </style>
+</head>
+<body>
+<h1>Shortest Paths: Step-by-Step Visualization</h1>
+<p class="sub">Press Play or navigate steps with buttons and arrow keys. Click a log line to jump to that step.</p>
+<div class="tabs" id="tabs"></div>
+<div id="root"></div>
+
+<script>
+    const W=900,H=520,R=17,I=Infinity;
+    const $tabs=document.getElementById('tabs'),$root=document.getElementById('root');
+    const C={fw:'#2563eb',bw:'#ea580c',ok:'#16a34a',sc:'#9333ea',gold:'#eab308',gr:'#94a3b8',ink:'#1b2433'};
+    const FILL={f:'#bfdbfe',b:'#fed7aa',both:'#e9d5ff'};
+    const key=(a,b)=>a<b?a+'-'+b:b+'-'+a;
+    let seed=Math.floor(Math.random()*1e9)+1;
+    const rnd=()=>(seed=seed*16807%2147483647)/2147483647;
+
+    /* ---------- graph ---------- */
+    function makeGraph(n){
+        const cols=Math.round(Math.sqrt(n*W/H)),rows=Math.ceil(n/cols),cw=(W-100)/cols,ch=(H-100)/rows;
+        const nodes=[...Array(n)].map((_,i)=>({id:i,
+            x:50+(i%cols+.5)*cw+(rnd()-.5)*cw*.55,y:50+(Math.floor(i/cols)+.5)*ch+(rnd()-.5)*ch*.55}));
+        const D=(a,b)=>Math.hypot(nodes[a].x-nodes[b].x,nodes[a].y-nodes[b].y);
+        const adj=nodes.map(()=>[]),edges=[],has=new Set();
+        // weight >= distance/10, so A* heuristic is admissible
+        const add=(a,b)=>{const k=key(a,b);if(a===b||has.has(k))return;has.add(k);
+            const w=Math.ceil(D(a,b)/10*(1+rnd()*.6));edges.push({a,b,w});adj[a].push({to:b,w});adj[b].push({to:a,w})};
+        for(let i=0;i<n;i++)[...Array(n).keys()].filter(j=>j!==i).sort((x,y)=>D(i,x)-D(i,y))
+            .slice(0,2+(rnd()<.5?1:0)).forEach(j=>add(i,j));
+        for(;;){ // ensure connectivity
+            const comp=Array(n).fill(-1);let c=0;
+            for(let i=0;i<n;i++){if(comp[i]>=0)continue;const st=[i];comp[i]=c;
+                while(st.length){const u=st.pop();adj[u].forEach(e=>{if(comp[e.to]<0){comp[e.to]=c;st.push(e.to)}})}c++}
+            if(c===1)break;let b=null;
+            for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)if(comp[i]!==comp[j]&&(!b||D(i,j)<b[2]))b=[i,j,D(i,j)];
+            add(b[0],b[1]);
+        }
+        return {n,nodes,edges,adj,D};
+    }
+    function dijk(g,s,t){
+        const d=Array(g.n).fill(I),p=Array(g.n).fill(-1),dn=Array(g.n).fill(0);let cnt=0;d[s]=0;
+        for(;;){let u=-1;for(let i=0;i<g.n;i++)if(!dn[i]&&d[i]<I&&(u<0||d[i]<d[u]))u=i;
+            if(u<0)break;dn[u]=1;cnt++;if(u===t)break;
+            g.adj[u].forEach(e=>{if(d[u]+e.w<d[e.to]){d[e.to]=d[u]+e.w;p[e.to]=u}})}
+        return {d,p,cnt};
+    }
+
+    /* ---------- bidirectional search (and CH query) ---------- */
+    function bidi(g,s,t,adjf,o={}){
+        const n=g.n,St=[],ch=o.ch;
+        const d=[Array(n).fill(I),Array(n).fill(I)],p=[Array(n).fill(-1),Array(n).fill(-1)];
+        const dn=[Array(n).fill(0),Array(n).fill(0)],q=[new Set([s]),new Set([t])];
+        d[0][s]=0;d[1][t]=0;let best=I,meet=-1,vis=0;
+        const col=[C.fw,C.bw],fil=[FILL.f,FILL.b];
+        const snap=(msg,cur,path)=>{
+            const nodes={},edges={};
+            for(let i=0;i<n;i++){
+                const nd={fill:'#fff',ring:C.gr,lab:[]};
+                if(o.rank)nd.lab.push(['r'+o.rank[i],'#94a3b8']);
+                if(dn[0][i]&&dn[1][i]){nd.fill=FILL.both;nd.ring=C.sc}
+                else for(const k of [0,1]){
+                    if(dn[k][i]){nd.fill=fil[k];nd.ring=col[k]}
+                    else if(q[k].has(i)){nd.ring=col[k];nd.dash=1}}
+                [0,1].forEach(k=>{
+                    if(d[k][i]<I)nd.lab.push([d[k][i],col[k]]);
+                    if(p[k][i]>=0)edges[key(i,p[k][i])]={c:col[k],w:3.5}});
+                nodes[i]=nd;
+            }
+            Object.assign(nodes[s],{fill:C.fw,tc:'#fff'});Object.assign(nodes[t],{fill:C.bw,tc:'#fff'});
+            if(meet>=0){nodes[meet].ring=C.gold;nodes[meet].thick=1}
+            if(cur!=null)nodes[cur].glow=1;
+            if(path){for(let i=0;i<path.length-1;i++)edges[key(path[i],path[i+1])]={c:C.ok,w:6};
+                path.forEach(v=>nodes[v].ring=C.ok)}
+            return {nodes,edges,msg,sc:o.sc,stat:`Vertices extracted: ${vis}`+(best<I?` · best length: ${best}`:'')};
+        };
+        St.push(snap(`Start: forward search (blue) from ${s}, backward (orange) from ${t}.`));
+        let side=0;
+        const top=k=>{let b=-1;q[k].forEach(v=>{if(b<0||d[k][v]<d[k][b])b=v});return b};
+        for(;;){
+            const a=[top(0),top(1)],ky=a.map((v,k)=>v<0?I:d[k][v]);
+            if(a[0]<0&&a[1]<0)break;
+            if(ch?(ky[0]>=best&&ky[1]>=best):(best<I&&ky[0]+ky[1]>=best))break;
+            let k=side;if(a[k]<0)k=1-k;side=1-k;
+            const u=a[k];
+            if(ch&&d[k][u]>=best){q[k].delete(u);continue}
+            q[k].delete(u);dn[k][u]=1;vis++;
+            St.push(snap(`${k?'Backward':'Forward'} search: extract vertex ${u} with minimum distance ${d[k][u]}.`,u));
+            const upd=[];
+            adjf(u).forEach(e=>{const nd=d[k][u]+e.w;
+                if(nd<d[k][e.to]){d[k][e.to]=nd;p[k][e.to]=u;q[k].add(e.to);upd.push(`${e.to} to ${nd}`);
+                    if(d[1-k][e.to]<I&&nd+d[1-k][e.to]<best){best=nd+d[1-k][e.to];meet=e.to;upd.push(`meet at ${e.to}, length ${best}`)}}});
+            St.push(snap(upd.length?`Relaxation from ${u}: ${upd.join('; ')}.`:`Nothing to improve from ${u}.`,u));
+        }
+        if(best===I){St.push(snap('No path exists.'));return St}
+        const pa=[];for(let v=meet;v>=0;v=p[0][v])pa.unshift(v);
+        for(let v=p[1][meet];v>=0;v=p[1][v])pa.push(v);
+        const full=[pa[0]];
+        for(let i=0;i<pa.length-1;i++)full.push(...(o.unpack?o.unpack(pa[i],pa[i+1]):[pa[i],pa[i+1]]).slice(1));
+        St.push(snap(`Done: distance ${best}. ${ch?'Both sides can no longer improve the answer.':'Sum of queue tops >= best length — search stopped.'} Path: ${full.join(' -> ')}.`,null,full));
+        return St;
+    }
+
+    /* ---------- A* ---------- */
+    function astar(g,s,t){
+        const n=g.n,St=[],h=i=>g.D(i,t)/10,gs=Array(n).fill(I),p=Array(n).fill(-1),cl=Array(n).fill(0),op=new Set([s]);
+        gs[s]=0;let vis=0;const f=i=>gs[i]+h(i);
+        const snap=(msg,cur,path)=>{
+            const nodes={},edges={};
+            for(let i=0;i<n;i++){
+                const nd={fill:'#fff',ring:C.gr,lab:[]};
+                if(cl[i]){nd.fill=FILL.f;nd.ring=C.fw}else if(op.has(i)){nd.ring=C.sc;nd.dash=1}
+                if(gs[i]<I)nd.lab.push(['g='+gs[i],C.fw],['f='+f(i).toFixed(1),'#a16207']);
+                if(p[i]>=0)edges[key(i,p[i])]={c:C.fw,w:3.5};
+                nodes[i]=nd}
+            Object.assign(nodes[s],{fill:C.fw,tc:'#fff'});Object.assign(nodes[t],{fill:C.bw,tc:'#fff'});
+            if(cur!=null)nodes[cur].glow=1;
+            if(path){for(let i=0;i<path.length-1;i++)edges[key(path[i],path[i+1])]={c:C.ok,w:6};path.forEach(v=>nodes[v].ring=C.ok)}
+            return {nodes,edges,msg,stat:`Vertices extracted: ${vis}`};
+        };
+        St.push(snap(`Start: f(v) = g(v) + h(v), where h is Euclidean distance to target ${t} (divided by 10 to not overestimate weight). For ${s}: h=${h(s).toFixed(1)}.`));
+        while(op.size){
+            let u=-1;op.forEach(v=>{if(u<0||f(v)<f(u)-1e-9||(Math.abs(f(v)-f(u))<1e-9&&gs[v]>gs[u]))u=v});
+            op.delete(u);cl[u]=1;vis++;
+            St.push(snap(`Extract ${u} with minimum f: g=${gs[u]}, h=${h(u).toFixed(1)}, f=${f(u).toFixed(1)}.`,u));
+            if(u===t)break;
+            const upd=[];
+            g.adj[u].forEach(e=>{const nd=gs[u]+e.w;
+                if(nd<gs[e.to]){gs[e.to]=nd;p[e.to]=u;cl[e.to]=0;op.add(e.to);upd.push(`${e.to}: g=${nd}, f=${f(e.to).toFixed(1)}`)}});
+            St.push(snap(upd.length?`Relaxation from ${u}: ${upd.join('; ')}.`:`Nothing to improve from ${u}.`,u));
+        }
+        const path=[];for(let v=t;v>=0;v=p[v])path.unshift(v);
+        const dj=dijk(g,s,t).cnt;
+        const last=snap(`Target reached: length ${gs[t]}. Path: ${path.join(' -> ')}. A* extracted ${vis} vertices, standard Dijkstra would extract ${dj}.`,null,path);
+        last.stat=`Vertices extracted: ${vis} (Dijkstra: ${dj})`;St.push(last);
+        return St;
+    }
+
+    /* ---------- Contraction Hierarchies: preprocessing ---------- */
+    function chPre(g){
+        const n=g.n,H=g.adj.map(a=>new Map(a.map(e=>[e.to,e.w]))),up=Array(n).fill(0).map(()=>[]);
+        const rank=Array(n).fill(-1),mid={},St=[];let sc=[],r=0;
+        const witness=(u,w,ex,lim)=>{
+            const d=new Map([[u,0]]),dn=new Set();
+            for(;;){let x=-1;d.forEach((val,k)=>{if(!dn.has(k)&&(x<0||val<d.get(x)))x=k});
+                if(x<0||d.get(x)>lim)break;if(x===w)return d.get(x);dn.add(x);
+                H[x].forEach((wt,y)=>{if(y!==ex&&!dn.has(y)){const nd=d.get(x)+wt;if(nd<(d.has(y)?d.get(y):I))d.set(y,nd)}})}
+            return d.has(w)?d.get(w):I;};
+        const plan=v=>{const nb=[...H[v].keys()],res=[];
+            for(let i=0;i<nb.length;i++)for(let j=i+1;j<nb.length;j++){
+                const u=nb[i],w=nb[j],via=H[v].get(u)+H[v].get(w);
+                if(witness(u,w,v,via)>via)res.push({a:u,b:w,w:via,m:v})}
+            return res};
+        const snap=(msg,cur)=>{
+            const nodes={},edges={};
+            g.nodes.forEach(nd=>{const c=rank[nd.id]>=0;
+                nodes[nd.id]={fill:c?'#e2e8f0':'#fff',ring:c?'#cbd5e1':C.gr,tc:c?'#94a3b8':C.ink,lab:c?[['rank '+rank[nd.id],'#94a3b8']]:[]}});
+            const faint=(a,b)=>{if(rank[a]>=0||rank[b]>=0)edges[key(a,b)]={c:'#e2e8f0',w:1.5}};
+            g.edges.forEach(e=>faint(e.a,e.b));sc.forEach(e=>faint(e.a,e.b));
+            if(cur!=null)nodes[cur].glow=1;
+            return {nodes,edges,msg,sc:sc.slice(),stat:`Contracted: ${r} of ${n} · shortcuts: ${sc.length}`};
+        };
+        St.push(snap('Preprocessing: vertices are contracted one by one, and to preserve shortest paths, shortcuts are added between neighbors (purple dashed lines).'));
+        while(r<n){
+            let v=-1,bp=null,bs=I;
+            for(let i=0;i<n;i++)if(rank[i]<0){const pl=plan(i),sco=pl.length-H[i].size;if(sco<bs){bs=sco;v=i;bp=pl}}
+            St.push(snap(bp.length?`Contracting ${v}: no bypass without it for pairs ${bp.map(e=>e.a+'-'+e.b).join(', ')} — shortcuts needed.`:`Contracting ${v}: every neighbor pair has a bypass no longer, shortcuts not needed.`,v));
+            H[v].forEach((w,u)=>up[v].push({to:u,w}));
+            rank[v]=r++;
+            bp.forEach(e=>{sc=sc.filter(x=>key(x.a,x.b)!==key(e.a,e.b));sc.push(e);mid[key(e.a,e.b)]=v;H[e.a].set(e.b,e.w);H[e.b].set(e.a,e.w)});
+            H[v].forEach((w,u)=>H[u].delete(v));
+            St.push(snap(`Vertex ${v} received rank ${rank[v]}; shortcuts added: ${bp.length}.`));
+        }
+        const unpack=(a,b)=>{const m=mid[key(a,b)];return m===undefined?[a,b]:[...unpack(a,m).slice(0,-1),...unpack(m,b)]};
+        return {St,up,rank,sc,unpack};
+    }
+
+    /* ---------- TSP ---------- */
+    function tsp(g,cs){
+        const k=cs.length,m=k-1,St=[],dj=cs.map(c=>dijk(g,c)),D=(i,j)=>dj[i].d[cs[j]];
+        const seg=(i,j,E,s)=>{let v=cs[j];while(v!==cs[i]){const p=dj[i].p[v];if(p<0)break;E[key(v,p)]=s;v=p}};
+        const snap=(msg,o={})=>{
+            const nodes={};g.nodes.forEach(n=>nodes[n.id]={fill:'#fff',ring:C.gr,lab:o.lab?o.lab(n.id):[]});
+            cs.forEach((c,i)=>{Object.assign(nodes[c],{fill:i?'#f3e8ff':C.sc,ring:C.sc,tc:i?C.ink:'#fff'});
+                if(o.ord)nodes[c].lab=[['No.'+o.ord[i],C.ok]]});
+            if(o.hi!=null)nodes[cs[o.hi]].glow=1;
+            return {nodes,edges:o.E||{},msg,pre:o.pre,stat:`Cities: ${k} · DP states: ${m*(1<<m)}`};
+        };
+        St.push(snap(`Cities: ${cs.join(', ')}. Start is ${cs[0]} (selected first). First, find distances between all cities with Dijkstra.`));
+        cs.forEach((c,i)=>{const E={};dj[i].p.forEach((p,v)=>{if(p>=0)E[key(v,p)]={c:C.fw,w:3}});
+            St.push(snap(`Dijkstra from city ${c}: shortest-path tree; numbers at vertices are distances.`,{E,hi:i,lab:id=>dj[i].d[id]<I?[[dj[i].d[id],'#64748b']]:[]}))});
+        const pad=x=>String(x).padStart(4);
+        St.push(snap('Distance matrix between cities is ready. Next — Held-Karp DP over city subsets.',
+            {pre:'    '+cs.map(pad).join('')+'\n'+cs.map((c,i)=>pad(c)+cs.map((_,j)=>pad(D(i,j))).join('')).join('\n')}));
+        const F=1<<m,dp=Array(F*m).fill(I),par=Array(F*m).fill(-1);
+        for(let j=0;j<m;j++)dp[(1<<j)*m+j]=D(0,j+1);
+        for(let mk=1;mk<F;mk++)for(let j=0;j<m;j++){const c=dp[mk*m+j];if(!(mk>>j&1)||c>=I)continue;
+            for(let q=0;q<m;q++){if(mk>>q&1)continue;const nm=mk|1<<q,v=c+D(j+1,q+1);
+                if(v<dp[nm*m+q]){dp[nm*m+q]=v;par[nm*m+q]=j}}}
+        const pc=x=>{let c=0;for(;x;x&=x-1)c++;return c};
+        const chain=(mk,j)=>{const a=[];while(j>=0){a.unshift(j+1);const pj=par[mk*m+j];mk^=1<<j;j=pj}return a};
+        for(let s=1;s<=m;s++){
+            let b=I,bm=0,bj=0,cnt=0;
+            for(let mk=1;mk<F;mk++)if(pc(mk)===s)for(let j=0;j<m;j++)if((mk>>j&1)&&dp[mk*m+j]<I){cnt++;if(dp[mk*m+j]<b){b=dp[mk*m+j];bm=mk;bj=j}}
+            const ch=chain(bm,bj),E={};let pr=0;ch.forEach(c=>{seg(pr,c,E,{c:C.sc,w:3.5,d:1});pr=c});
+            St.push(snap(`DP, layer ${s} of ${m}: ${cnt} states (${s} cities visited). Best partial route: ${[cs[0],...ch.map(i=>cs[i])].join(' -> ')}, length ${b}.`,{E}));
+        }
+        let best=I,bl=-1;
+        for(let j=0;j<m;j++){const v=dp[(F-1)*m+j]+D(j+1,0);if(v<best){best=v;bl=j}}
+        const tour=[0,...chain(F-1,bl)],E={},ord=[];
+        tour.forEach((ci,pos)=>{ord[ci]=pos+1;seg(ci,tour[(pos+1)%k],E,{c:C.ok,w:6})});
+        St.push(snap(`Optimal tour: ${[...tour,0].map(i=>cs[i]).join(' -> ')}, length ${best}.`,{E,ord}));
+        return St;
+    }
+
+    /* ---------- drawing ---------- */
+    function draw(t,st){
+        const x=t.ctx,g=t.g,dpr=window.devicePixelRatio||1;
+        t.cv.width=W*dpr;t.cv.height=H*dpr;x.setTransform(dpr,0,0,dpr,0,0);
+        x.fillStyle='#f8fafc';x.fillRect(0,0,W,H);
+        const E=st.edges||{},N=st.nodes||{},P=g.nodes;
+        const line=(a,b,c,w,dash)=>{x.beginPath();x.moveTo(P[a].x,P[a].y);x.lineTo(P[b].x,P[b].y);
+            x.strokeStyle=c;x.lineWidth=w;x.lineCap='round';x.setLineDash(dash?[7,5]:[]);x.stroke();x.setLineDash([])};
+        const pills={};
+        g.edges.forEach(e=>{const k=key(e.a,e.b);if(!E[k])line(e.a,e.b,'#cbd5e1',2);pills[k]=[e.a,e.b,e.w,'#64748b']});
+        (st.sc||[]).forEach(e=>{const k=key(e.a,e.b),s=E[k];line(e.a,e.b,s?s.c:C.sc,s?s.w:2.5,!s);pills[k]=[e.a,e.b,e.w,C.sc]});
+        g.edges.forEach(e=>{const s=E[key(e.a,e.b)];if(s)line(e.a,e.b,s.c,s.w,s.d)});
+        x.font='600 11px system-ui';x.textAlign='center';x.textBaseline='middle';
+        Object.values(pills).forEach(([a,b,w,c])=>{const mx=(P[a].x+P[b].x)/2,my=(P[a].y+P[b].y)/2,tw=x.measureText(w).width+8;
+            x.fillStyle='#f8fafc';x.beginPath();x.roundRect(mx-tw/2,my-8,tw,16,5);x.fill();x.fillStyle=c;x.fillText(w,mx,my+.5)});
+        P.forEach(n=>{const d=N[n.id]||{};
+            if(d.glow){x.beginPath();x.arc(n.x,n.y,R+8,0,7);x.fillStyle='rgba(234,179,8,.35)';x.fill()}
+            x.beginPath();x.arc(n.x,n.y,R,0,7);x.fillStyle=d.fill||'#fff';x.fill();
+            x.lineWidth=d.thick?5:3;x.strokeStyle=d.ring||C.gr;x.setLineDash(d.dash?[4,3]:[]);x.stroke();x.setLineDash([]);
+            x.font='700 13px system-ui';x.fillStyle=d.tc||C.ink;x.fillText(n.id,n.x,n.y+.5);
+            (d.lab||[]).forEach(([s,c],i)=>{x.font='700 11px ui-monospace,monospace';x.lineWidth=3;x.strokeStyle='#f8fafc';
+                x.strokeText(s,n.x,n.y-R-9-i*13);x.fillStyle=c;x.fillText(s,n.x,n.y-R-9-i*13)});
+        });
+    }
+
+    /* ---------- tabs and player ---------- */
+    const far=g=>{let b=[0,1,-1];for(let i=0;i<g.n;i++)for(let j=i+1;j<g.n;j++)if(g.D(i,j)>b[2])b=[i,j,g.D(i,j)];return [b[0],b[1]]};
+    const hint=(t,msg)=>({nodes:Object.fromEntries(t.sel.map((v,i)=>[v,{fill:i?C.bw:C.fw,tc:'#fff',ring:C.gr}])),edges:{},msg,sc:t.pre&&t.pre.sc});
+    const pairClick=(t,id)=>{if(t.sel.length===1&&t.sel[0]!==id)t.sel.push(id);else if(t.sel.length!==1)t.sel=[id]};
+    const LEG=[[C.fw,'source / forward search'],[C.bw,'target / backward search']];
+    const CFG=[
+        {id:'bidi',name:'Bidirectional Dijkstra',n:14,def:far,click:pairClick,
+            desc:'Two Dijkstra searches run simultaneously: one from the source (blue), another from the target (orange). They grow toward each other, and as soon as the sum of the minimum keys of both queues is no less than the best known length, the answer is found. The search area is roughly halved. Click two vertices to select source and target.',
+            legend:[...LEG,['#bfdbfe','vertex closed by forward search'],['#fed7aa','closed by backward'],[C.gold,'best meeting point'],[C.ok,'shortest path']],
+            build:t=>t.sel.length===2?bidi(t.g,t.sel[0],t.sel[1],u=>t.g.adj[u]):[hint(t,'Select source and target.')]},
+        {id:'astar',name:'A*',n:16,def:far,click:pairClick,
+            desc:'A* adds to the distance from the source g(v) a heuristic h(v) — a straight line to the target — and always picks the vertex with minimum f = g + h. The search is pulled toward the target rather than spreading in circles. The heuristic is admissible because edge weight is never less than segment length/10, so the path is optimal.',
+            legend:[...LEG,['#bfdbfe','closed'],[C.sc,'in queue (dashed)'],[C.ok,'shortest path']],
+            build:t=>t.sel.length===2?astar(t.g,t.sel[0],t.sel[1]):[hint(t,'Select source and target.')]},
+        {id:'ch',name:'Contraction Hierarchies',n:12,def:far,click:pairClick,
+            desc:'First, vertices are contracted in order of importance; if there is no bypass without the contracted vertex, a shortcut is added. Then the query is executed by bidirectional search only upward in ranks (r is the vertex rank), so it examines very few vertices. The step feed starts with preprocessing; after selecting a new pair, it goes directly to the query.',
+            legend:[...LEG,[C.sc,'shortcut (dashed)'],['#e2e8f0','contracted vertex'],[C.gold,'meeting point'],[C.ok,'path (shortcuts expanded)']],
+            prep:t=>{t.pre=chPre(t.g)},
+            build:t=>t.sel.length===2?[...t.pre.St,...bidi(t.g,t.sel[0],t.sel[1],u=>t.pre.up[u],{ch:1,sc:t.pre.sc,rank:t.pre.rank,unpack:t.pre.unpack})]:t.pre.St,
+            start:t=>t.sel.length===2&&t.picked?t.pre.St.length:0},
+        {id:'tsp',name:'Traveling Salesman',n:14,def:g=>[0,3,6,9,12].map(v=>v%g.n),max:9,
+            click:(t,id)=>{const i=t.sel.indexOf(id);if(i>=0)t.sel.splice(i,1);else if(t.sel.length<t.cfg.max)t.sel.push(id)},
+            desc:'Distances between selected cities are computed with Dijkstra (in real services — via CH), then Held-Karp DP iterates over city subsets, layer by layer. Click vertices to add and remove cities (3–9). The first selected city is the start.',
+            legend:[[C.sc,'start'],['#f3e8ff','city'],[C.fw,'Dijkstra tree'],[C.sc,'partial route (dashed)'],[C.ok,'optimal tour']],
+            build:t=>t.sel.length>=3?tsp(t.g,t.sel):[hint(t,'Select at least 3 cities.')]}
+    ];
+    const TABS=[];
+    CFG.forEach((cfg,ti)=>{
+        const t={cfg,idx:0,steps:[],timer:null,sel:[]};TABS.push(t);
+        const b=document.createElement('button');b.textContent=cfg.name;$tabs.appendChild(b);t.btn=b;
+        const s=document.createElement('section');s.className='tab';
+        s.innerHTML=`<div class="desc">${cfg.desc}</div>
+  <div class="bar"><button data-a="first" title="First step">|&lt;</button><button data-a="prev" title="Previous step">&lt;</button>
+  <button class="go" data-a="play">Play</button><button data-a="next" title="Next step">&gt;</button><button data-a="last" title="Last step">&gt;|</button>
+  <input class="scrub" type="range" min="0" value="0" aria-label="Step"><span class="cnt"></span>
+  <label>Speed <input class="spd" type="range" min="1" max="10" value="5"></label><button data-a="new">New Graph</button></div>
+  <div class="main"><div class="cv"><canvas width="${W}" height="${H}"></canvas>
+  <div class="legend">${cfg.legend.map(([c,l])=>`<span><i style="background:${c};border-color:${c}"></i>${l}</span>`).join('')}</div></div>
+  <aside><div class="now"></div><ol class="log"></ol></aside></div>`;
+        $root.appendChild(s);t.el=s;
+        const q=x=>s.querySelector(x);
+        t.cv=q('canvas');t.ctx=t.cv.getContext('2d');
+        const stop=()=>{clearTimeout(t.timer);t.timer=null;q('.go').textContent='Play'};
+        const delay=()=>1500-q('.spd').value*135;
+        const go=i=>{t.idx=Math.max(0,Math.min(t.steps.length-1,i));render()};
+        function render(){
+            const st=t.steps[t.idx];draw(t,st);
+            q('.now').innerHTML=`<b>Step ${t.idx+1} of ${t.steps.length}</b><p>${st.msg}</p>${st.pre?`<pre>${st.pre}</pre>`:''}<div class="stat">${st.stat||''}</div>`;
+            q('.scrub').max=t.steps.length-1;q('.scrub').value=t.idx;q('.cnt').textContent=`${t.idx+1} / ${t.steps.length}`;
+            [...q('.log').children].forEach((li,i)=>{li.className=i===t.idx?'on':i<t.idx?'past':''});
+            const on=q('.log .on');if(on)q('.log').scrollTop=on.offsetTop-q('.log').clientHeight/2;
+        }
+        function rebuild(){
+            stop();t.steps=cfg.build(t);t.idx=cfg.start?cfg.start(t):0;
+            q('.log').innerHTML=t.steps.map((st,i)=>`<li data-i="${i}">${i+1}. ${st.msg}</li>`).join('');render();
+        }
+        t.stop=stop;t.go=go;t.play=()=>{
+            if(t.timer){stop();return}
+            if(t.idx>=t.steps.length-1)go(0);
+            q('.go').textContent='Pause';
+            const run=()=>{t.timer=setTimeout(()=>{if(t.idx<t.steps.length-1){go(t.idx+1);run()}else stop()},delay())};run();
+        };
+        const fresh=()=>{t.g=makeGraph(cfg.n);t.sel=cfg.def(t.g);t.picked=0;if(cfg.prep)cfg.prep(t);rebuild()};
+        s.querySelector('.bar').addEventListener('click',e=>{const a=e.target.dataset.a;if(!a)return;
+            if(a==='play')t.play();else if(a==='new')fresh();
+            else{stop();go(a==='first'?0:a==='last'?t.steps.length-1:t.idx+(a==='next'?1:-1))}});
+        q('.scrub').addEventListener('input',e=>{stop();go(+e.target.value)});
+        q('.log').addEventListener('click',e=>{const li=e.target.closest('li');if(li){stop();go(+li.dataset.i)}});
+        t.cv.addEventListener('click',e=>{
+            const r=t.cv.getBoundingClientRect(),mx=(e.clientX-r.left)*W/r.width,my=(e.clientY-r.top)*H/r.height;
+            const n=t.g.nodes.find(n=>Math.hypot(n.x-mx,n.y-my)<=R+6);if(!n)return;
+            cfg.click(t,n.id);t.picked=1;rebuild();
+        });
+        b.addEventListener('click',()=>show(ti));
+        fresh();
+    });
+    function show(i){TABS.forEach((t,j)=>{t.btn.classList.toggle('on',i===j);t.el.classList.toggle('on',i===j);if(i!==j)t.stop()});window.cur=TABS[i]}
+    show(0);
+    document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;const t=window.cur;
+        if(e.key==='ArrowRight'){t.stop();t.go(t.idx+1)}else if(e.key==='ArrowLeft'){t.stop();t.go(t.idx-1)}
+        else if(e.key===' '){e.preventDefault();t.play()}});
+</script>
+</body>
+</html>
