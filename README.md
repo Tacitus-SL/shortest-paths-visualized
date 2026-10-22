@@ -71,11 +71,11 @@ Open [`visualization.html`](https://tacitus-sl.github.io/shortest-paths-visualiz
 ## Project Structure
 
 ```
-├── friend_suggestion.cpp    # Bidirectional Dijkstra
-├── dist_with_coords.cpp      # A* with Euclidean heuristic
-├── dist_preprocess.cpp # Contraction Hierarchies
+├── friend_suggestion.cpp            # Bidirectional Dijkstra
+├── dist_with_coords.cpp             # A* with Euclidean heuristic
+├── dist_preprocess.cpp              # Contraction Hierarchies
 ├── travelling_salesman_problem.cpp  # CH + Held-Karp TSP
-└──  visualization.html             # Interactive visualization
+└── visualization.html               # Interactive visualization
 ```
 
 ## Building and Running
